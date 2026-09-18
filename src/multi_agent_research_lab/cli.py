@@ -9,7 +9,9 @@ from rich.panel import Panel
 
 from multi_agent_research_lab.core.config import get_settings
 from multi_agent_research_lab.core.errors import StudentTodoError
-from multi_agent_research_lab.core.schemas import ResearchQuery
+from multi_agent_research_lab.core.schemas import AgentName, AgentResult, ResearchQuery
+from multi_agent_research_lab.services.llm_client import LLMClient
+from multi_agent_research_lab.utils.timer import elapsed_timer
 from multi_agent_research_lab.core.state import ResearchState
 from multi_agent_research_lab.graph.workflow import MultiAgentWorkflow
 from multi_agent_research_lab.observability.logging import configure_logging
@@ -46,10 +48,46 @@ def baseline(
     _init()
     request = _parse_query(query)
     state = ResearchState(request=request)
-    state.final_answer = (
-        "Baseline skeleton response. TODO(student): replace this with a real single-agent "
-        "implementation and record latency/cost/quality metrics."
+    system_prompt = (
+        "You are a helpful research assistant. "
+        "Answer accurately, clearly, and concisely. "
+        "If you are uncertain, say so."
     )
+    user_prompt = (
+        f"Research question: {request.query}\n"
+        f"Audience: {request.audience}\n\n"
+        "Provide a useful answer to this question."
+    )
+    with elapsed_timer() as elapsed:
+        response = LLMClient().complete(system_prompt, user_prompt)
+    state.final_answer = response.content
+
+    state.agent_results.append(
+        AgentResult(
+            agent=AgentName.WRITER,
+            content=response.content,
+            metadata={
+                "input_tokens": response.input_tokens,
+                "output_tokens": response.output_tokens,
+                "latency_seconds": elapsed(),
+            },
+        )
+    )
+    user_prompt = (
+        f"Research question: {request.query}\n"
+        f"Audience: {request.audience}\n\n"
+        "Provide a useful answer to this question."
+    )
+
+    state.add_trace_event(
+        "baseline",
+        {
+            "input_tokens": response.input_tokens,
+            "output_tokens": response.output_tokens,
+            "latency_seconds": elapsed(),
+        },
+    )
+
     console.print(Panel.fit(state.final_answer, title="Single-Agent Baseline"))
 
 
